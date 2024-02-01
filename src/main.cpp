@@ -20,6 +20,7 @@ const int LCD_ROWS = 2;
 LiquidCrystal_I2C lcd(0x27, LCD_COLS, LCD_ROWS);
 
 
+boolean pairedWithPeer = false;
 uint8_t receiverMacAddress[6];
 esp_now_peer_info_t peerInfo;
 
@@ -66,6 +67,9 @@ boolean isButtonPressed(int buttonNumber) {
 
 int waitForButtonPress() {
   while (true) {
+
+    if (pairedWithPeer) return 0;
+
     if (isButtonPressed(1)) {
       return 1;
     } else if (isButtonPressed(2)) {
@@ -83,6 +87,8 @@ void getPeerMacAddress() {
   lcdClearAndWrite("Enter peer MAC:");
 
   for (int i = 0; i < 12; i++) {
+
+    if (pairedWithPeer) return;
 
     int characterIndex = 0;
     boolean confirmedCharacter = false;
@@ -122,6 +128,7 @@ void getPeerMacAddress() {
   for (int i = 0; i < 6; i++) {
     receiverMacAddress[i] = peerMacAddressHex[i];
   }
+  pairedWithPeer = true;
 
 }
 
@@ -140,6 +147,20 @@ void setGreenLED(boolean lightOn) {
 
 
 void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+
+  // Auto pair
+  if (!pairedWithPeer) {
+    for (int i = 0; i < 6; i++) {
+      receiverMacAddress[i] = mac[i];
+    }
+    pairedWithPeer = true;
+    
+    lcdClearAndWrite("Auto paired");
+    delay(1000);
+    lcd.clear();
+    return;
+  }
+
   setGreenLED(false);
 
   memcpy(&incomingReadings, incomingData, sizeof(incomingReadings));
@@ -173,57 +194,6 @@ void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   }
 
   setGreenLED(true);
-}
-
-
-void setup() {
-  pinMode(BUTTON_1_PIN, INPUT);
-  pinMode(BUTTON_2_PIN, INPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-
-  // Initialize LCD
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
-
-  // Set wifi mode: station
-  WiFi.mode(WIFI_STA);
-  
-  // Initialize
-  if (esp_now_init() != ESP_OK) {
-    lcdClearAndWrite("Error initializing ESP-NOW");
-    delay(100);
-    return;
-  }
-
-  // Display MAC Address on LCD
-  lcdClearAndWrite("MAC Address: " + WiFi.macAddress());
-  while (waitForButtonPress() != 2) {} // wait until button pressed
-  delay(500);
-
-  // Determine peer MAC Address
-  getPeerMacAddress();
-
-  // Register peer
-  memcpy(peerInfo.peer_addr, receiverMacAddress, 6);
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
-
-  // Add peer
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
-    lcdClearAndWrite("Failed to add peer");
-    delay(100);
-    return;
-  }
-
-  // Register receive message
-  esp_now_register_recv_cb(onDataRecv);
-
-  lcd.clear();
-  lcd.setCursor(LCD_COLS, 0);
-  lcd.autoscroll();
-
 }
 
 
@@ -289,6 +259,61 @@ void listenForTypeMessage() {
   if (messagePresent) {
     sendMessage(currentCharacter, size, false);
   }
+
+}
+
+
+void setup() {
+  pinMode(BUTTON_1_PIN, INPUT);
+  pinMode(BUTTON_2_PIN, INPUT);
+  pinMode(GREEN_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  // Initialize LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+
+  // Set wifi mode: station
+  WiFi.mode(WIFI_STA);
+  
+  // Initialize
+  if (esp_now_init() != ESP_OK) {
+    lcdClearAndWrite("Error initializing ESP-NOW");
+    delay(100);
+    return;
+  }
+
+  // Register receive message
+  esp_now_register_recv_cb(onDataRecv);
+
+  // Display MAC Address on LCD
+  lcdClearAndWrite("MAC Address: " + WiFi.macAddress());
+  while (!isButtonPressed(2) && !pairedWithPeer) {} // wait until button pressed
+  delay(500);
+
+  // Determine peer MAC Address
+  if (!pairedWithPeer)
+    getPeerMacAddress();
+
+  // Register peer
+  memcpy(peerInfo.peer_addr, receiverMacAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  // Add peer
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    lcdClearAndWrite("Failed to add peer");
+    delay(100);
+    return;
+  }
+
+  // Send message to auto pair
+  sendMessage({}, 0, true);
+
+  lcd.clear();
+  lcd.setCursor(LCD_COLS, 0);
+  lcd.autoscroll();
 
 }
 
