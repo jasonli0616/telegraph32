@@ -278,6 +278,7 @@ void listenForTypeMessage() {
     } else if (isButtonPressed(2)) {
       // Send space
       sendMessage({}, 0, true);
+      delay(500);
       return;
     }
     timeSinceLastPress++;
