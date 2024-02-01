@@ -157,7 +157,6 @@ void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
     
     lcdClearAndWrite("Auto paired");
     delay(1000);
-    lcd.clear();
     return;
   }
 
@@ -310,6 +309,8 @@ void setup() {
 
   // Send message to auto pair
   sendMessage({}, 0, true);
+
+  delay(500);
 
   lcd.clear();
   lcd.setCursor(LCD_COLS, 0);
